@@ -1,0 +1,8 @@
+
+Vitesses max d'horloge SPI
+==========================
+
+Pour l'ADC      (puce MCP 3201)     : 1,6 MHz
+Pour le DAC     (puce MCP 4921)     : 20 MHz
+Pour la SRAM    (puce 23 LC 1024)   : 20 MHz
+
