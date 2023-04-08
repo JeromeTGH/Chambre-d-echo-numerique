@@ -9,11 +9,11 @@
                                                                                       \_|
   Fichier :       prgArduino-TestEntreeSortie.ino
 
-  Description :   Programme permettant renvoyant les données lues en entrées (sur l'ADC)
-                  directement en sortie (sur le DAC)
+  Description :   Programme permettant de renvoyer directement les données lues en entrée (via l'ADC)
+                  sur la sortie (via le DAC)
 
-  Remarques :     --> la mémoire SRAM ne sera donc pas utilisée ici
-                  --> l'Arduino utilisé ici est un "Nano" (donc un modèle équipé du microcontrôleur ATmega328P)
+  Remarques :     --> la mémoire SRAM ne sera pas utilisée ici
+                  --> l'Arduino utilisé pour ce projet est un "Nano" (donc un modèle équipé du microcontrôleur ATmega328P)
 
   Auteur :        Jérôme TOMSKI (https://passionelectronique.fr/)
   Créé le :       07.04.2023
@@ -35,38 +35,40 @@
 // Fonctions raccourcies
 // ===========================================================
 
-// Ligne slave-select de l'ADC (branchée sur sortie D2 = pin PORTD.2 du µC)
+// Ligne slave-select de l'ADC (branchée sur sortie D2 de la carte Arduino, soit la pin PD2 du µC, donc le bit 2 sur PORTD[7..0])
 #define selectionner_ADC        PORTD &= 0b11111011
 #define desactiver_ADC          PORTD |= 0b00000100
 
-// Ligne slave-select du DAC (branchée sur sortie D3 = pin PORTD.3 du µC)
+// Ligne slave-select du DAC (branchée sur sortie D3 de la carte Arduino, soit la pin PD3 du µC, donc le bit 3 sur PORTD[7..0])
 #define selectionner_DAC        PORTD &= 0b11110111
 #define desactiver_DAC          PORTD |= 0b00001000
 
-// Ligne slave-select de la SRAM (branchée sur sortie D4 = pin PORTD.4 du µC)
+// Ligne slave-select de la SRAM (branchée sur sortie D4 de la carte Arduino, soit la pin PD4 du µC, donc le bit 4 sur PORTD[7..0])
 #define selectionner_SRAM       PORTD &= 0b11101111
 #define desactiver_SRAM         PORTD |= 0b00010000
 
-// Ligne MOSI (branchée sur sortie D11 = pin PORTB.3 du µC)
+// Ligne MOSI (branchée sur sortie D11 de la carte Arduino, soit la pin PB3 du µC, donc le bit 3 sur PORTB[7..0])
 #define mettre_MOSI_a_etat_bas  PORTB &= 0b11110111
 #define mettre_MOSI_a_etat_haut PORTB |= 0b00001000
 
-// Ligne MISO (branchée sur sortie D12 = pin PORTB.4 du µC)
+// Ligne MISO (branchée sur sortie D12 de la carte Arduino, soit la pin PB4 du µC, donc le bit 4 sur PORTB[7..0])
 #define lire_valeur_MISO        PORTB & 0b00010000
 
-// Ligne SCK (branchée sur sortie D13 = pin PORTB.5 du µC)
+// Ligne SCK (branchée sur sortie D13 de la carte Arduino, soit la pin PB5 du µC, donc le bit 5 sur PORTB[7..0])
 #define mettre_SCK_a_etat_bas   PORTB &= 0b11011111
 #define mettre_SCK_a_etat_haut  PORTB |= 0b00100000
 
-// Fonction "NOP" (pour faire faire une pause d'un cycle au µC, soit 62,5 ns, de base)
+// Fonction "NOP" (pour faire faire une pause au µC, équivalente à 1 cycle d'horloge, soit 62,5 ns, si prescaler non touché)
 #define executer_NOP asm volatile ("nop\n\t")
 
 // ===========================================================
 // CONSTANTES du programme
 // ===========================================================
-#define VITESSE_ECHANTILLONNAGE   44100   // De base, on échantillonnera le son à 44100 Hz ("qualité CD", en fait)
-#define VALEUR_MAXI_TIMER1        65535   // Le "Timer 1", dont nous allons nous servir, fait 16 bits ; le compteur compte donc de 0 à 65535
-#define VALEUR_DEMARRAGE_TIMER1   VALEUR_MAXI_TIMER1 - (F_CPU / VITESSE_ECHANTILLONNAGE)  // En sachant que F_CPU est une valeur déjà définie (valant 16000000, soit 16 MHz)
+#define VITESSE_ECHANTILLONNAGE   44100   // De base, on échantillonnera le son reçu à 44100 Hz ("qualité CD", en fait)
+#define VALEUR_MAXI_TIMER1        65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
+
+// Calcul de la valeur initiale qu'on donnera au Timer 1, chaque fois qu'il aura dépassé son max (c'est à dire qu'il aura "débordé")
+#define VALEUR_DEMARRAGE_TIMER1   VALEUR_MAXI_TIMER1 - (F_CPU / VITESSE_ECHANTILLONNAGE)  // En sachant que F_CPU est déjà une valeur définie (valant 16000000L, correspondant à la valeur du quartz 16 MHz, équipant l'Arduino Nano)
 
 
 // ===========================================================
@@ -74,29 +76,29 @@
 // ===========================================================
 void setup() {
 
-  // Désactivation de tous les périphériques présents sur le bus SPI, pour commencer
-  pinMode(pin_SS_ADC, OUTPUT);    digitalWrite(pin_SS_ADC, HIGH);       // Les lignes "slave select" sont actives à l'état bas, donc désactivées à l'état haut
+  // Désactivation de tous nos périphériques SPI, pour commencer, au démarrage
+  pinMode(pin_SS_ADC, OUTPUT);    digitalWrite(pin_SS_ADC, HIGH);       // Les lignes "slave select" sont actives à l'état bas, donc inactives à l'état haut
   pinMode(pin_SS_DAC, OUTPUT);    digitalWrite(pin_SS_DAC, HIGH); 
   pinMode(pin_SS_SRAM, OUTPUT);   digitalWrite(pin_SS_SRAM, HIGH); 
 
   // Mise au repos du bus SPI
-  pinMode(pin_MOSI, OUTPUT);      digitalWrite(pin_MOSI, LOW);          // Mise à l'état bas de la ligne MOSI (données maitre vers esclave)
+  pinMode(pin_MOSI, OUTPUT);      digitalWrite(pin_MOSI, LOW);          // Mise à l'état bas de la ligne MOSI (ligne de données maitre vers esclave)
   pinMode(pin_MISO, INPUT);                                             // On ne fait rien de particulier sur la ligne MISO, qui est une entrée
   pinMode(pin_SCK, OUTPUT);       digitalWrite(pin_SCK, LOW);           // Mise à l'état bas de la ligne SCK (horloge SPI)
 
   // Configuration des registres du "Timer 1", de l'ATmega328P -> page 112 (pour TIMSK1), page 108 (pour TCCR1A), page 110 (pour TCCR1B) du datasheet
-  noInterrupts();           // On désactive toutes les interruptions, pour commencer
+  noInterrupts();           // Avant tout, on désactive toutes les interruptions
 
-  bitClear(TCCR1B, WGM13);  // Active le "mode de génération de forme normal", c'est à dire ici, un comptage jusqu'à débordement du timer1 (qui enclenchera le drapeau TOV1)
-  bitClear(TCCR1B, WGM12);
+  bitClear(TCCR1B, WGM13);  // On active le "mode de génération de forme « normal »", c'est à dire un mode de comptage jusqu'à débordement du timer1
+  bitClear(TCCR1B, WGM12);  // (pour cela, on met les bits de configuration WGM13, 12, 11, et 10 à zéro)
   bitClear(TCCR1A, WGM11);
   bitClear(TCCR1A, WGM10);
 
-  bitClear(TCCR1B, CS12);   // Mise à 0-0-1 des bits CS12-CS11-CS10, pour définir une division de vitesse d'horloge par 1 (soit pas de ralentissement d'horloge, ici)
+  bitClear(TCCR1B, CS12);   // Mise à 0-0-1 des bits CS12-CS11-CS10, pour définir une division de vitesse d'horloge par 1, pour le Timer1 (donc pas de ralentissement d'horloge, ici)
   bitClear(TCCR1B, CS11);
   bitSet(TCCR1B, CS10);
 
-  bitSet(TIMSK1, TOIE1);    // Active le déclenchement d'interruption en cas de débordement (si le compteur "timer1" dépasse 65535 et revient à 0, donc)
+  bitSet(TIMSK1, TOIE1);    // On active le déclenchement d'interruption en cas de débordement du Timer1 (si le compteur essaye de dépasser 65535, donc)
                             // Nota : cela enclenchera l'appel de la fonction "ISR(TIMER1_OVF_vect)", écrite plus bas
  
   TCNT1 = VALEUR_DEMARRAGE_TIMER1;    // Définit la valeur de démarrage du Timer 1
@@ -109,8 +111,9 @@ void setup() {
 // Fonction LOOP (boucle programme, après setup)
 // ===========================================================
 void loop() {
-  // Aucun code ici, car mis à part la fonction SETUP, "tout" se passe dans la fonction interruption, tout en bas : ISR(TIMER1_OVF_vect)
+  // Aucun code ici … car mis à part la fonction SETUP, "tout" se passe dans la fonction d'interruption tout en bas, nommée "ISR(TIMER1_OVF_vect)"
 }
+
 
 // ===========================================================
 // Fonction permettant de lire 1 bit sur le bus SPI, et de l'enregistrer dans un nombre donné, à une position donnée
@@ -129,10 +132,10 @@ void lectureBitSPIvitesseMaxADC(uint16_t &valeurCible, uint8_t positionDuBit) {
     valeurCible |= (1 << positionDuBit);
   mettre_SCK_a_etat_bas;
 
-  // Nota : on compte environ 10 cycles d'horloge ici, ce qui fait, sur la base d'un µC tournant à 16 MHz, une fréquence SPI à 1,6 MHz
+  // Nota : les lignes ci-dessus correspondent grosso modo à 10 cycles d'horloge, ce qui fait, sur la base d'un µC tournant à 16 MHz, une fréquence SPI à 1,6 MHz
   //        (ce qui est la vitesse maxi de fonctionnement théorique du MCP 3201)
 }
-void lectureBitSPIvitesseMaxADC() {
+void lectureBitSPIvitesseMaxADC() {         // Fonction alternative, sans paramètres à passer (dans le cas où on attend rien en retour, en fait)
   executer_NOP;
   executer_NOP;
   executer_NOP;
@@ -144,30 +147,31 @@ void lectureBitSPIvitesseMaxADC() {
   mettre_SCK_a_etat_bas;
 }
 
+
 // ===========================================================
 // Fonction de lecture ADC
 // ===========================================================
 uint16_t litADC() {
 
-  // Variable qui nous permettra de stocker la valeur lue par l'ADC (à partir des 12 bits qu'on va récupérer, via le bus SPI)
+  // Variable qui nous permettra de stocker la valeur lue par l'ADC
   uint16_t valeurADC = 0;
 
   // Sélection de l'ADC (en abaissant sa ligne "slave select")
   selectionner_ADC;
   
-  // Remarque : l'ADC est assuré par un MCP3201 ; une fois la ligne slave-select abaissée, il nous faudra 15 coups d'horloge SCK pour récupérer les données
+  // Remarque : le modèle d'ADC utilisé ici est un MCP3201 ; une fois la ligne slave-select abaissée, il nous faudra 15 coups d'horloge SCK pour récupérer les données
   //            (les 2 premiers coups d'horloge initialisent la communication, le 3ème coup génère un bit nul, et du 4ème au 15ème, on récupère nos 12 bits de données)
 
-  // Premier coup d'horloge
+  // Premier coup d'horloge (init 1/2)
   lectureBitSPIvitesseMaxADC();
 
-  // Second coup d'horloge
+  // Second coup d'horloge (init 2/2)
   lectureBitSPIvitesseMaxADC();
 
   // 3ème coup d'horloge (pour faire générer un bit nul, qu'on ne vérifiera pas ici)
   lectureBitSPIvitesseMaxADC();
 
-  // 4ème au 15ème coup d'horloge
+  // 4ème au 15ème coup d'horloge : on lit et enregistre les 12 bits qui vont se présenter sur le bus SPI
   lectureBitSPIvitesseMaxADC(valeurADC, 11);
   lectureBitSPIvitesseMaxADC(valeurADC, 10);
   lectureBitSPIvitesseMaxADC(valeurADC, 9);
@@ -184,7 +188,8 @@ uint16_t litADC() {
   // Désélection de l'ADC (en remontant sa ligne "slave select")
   desactiver_ADC;
 
-  // Retourne la valeur lue
+  // Retourne la valeur lue (remarque : celle-ci sera en fait une suite de 0 et de 1, du style 110010001101 ; cela permet de faire passer nos 12 bits
+  // dans une seule variable uint, codée sur 16 bits, au lieu d'utiliser une chaîne de caractère, qui aurait monopolisé 12 x 8 bits)
   return valeurADC;
 
 }
@@ -200,7 +205,7 @@ void ecritureBitSPIvitesseMaximale(uint8_t valeur) {
   mettre_SCK_a_etat_bas;
 
   // Nota : à 16 MHz, chaque cycle du µC dure 62,5 ns
-  //       (bien qu'on soit à la vitesse maximale, c'est encore suffisamment "lent" pour communiquer avec le DAC ou la SRAM)
+  //       (bien qu'on soit à la vitesse maximale, c'est encore suffisamment "lent" pour communiquer avec le DAC ou la SRAM, à plein régime !)
 
 }
 
@@ -215,11 +220,11 @@ void ecritDansDAC(uint16_t valeur) {
 
   // Ecriture des 4 bits de configuration du DAC
   ecritureBitSPIvitesseMaximale(0);     // 1er bit de config : toujours à 0
-  ecritureBitSPIvitesseMaximale(0);     // 2ème bit de config : 0=unbuffered, 1=buffered
-  ecritureBitSPIvitesseMaximale(1);     // 3ème bit de config : 0=gain double, 1=pas de gain
-  ecritureBitSPIvitesseMaximale(1);     // 4ème bit de config : 0=sortie DAC éteinte, 1=sortie DAC active
+  ecritureBitSPIvitesseMaximale(0);     // 2ème bit de config : 0=unbuffered, 1=buffered (ici choix unbuffured, donc 0)
+  ecritureBitSPIvitesseMaximale(1);     // 3ème bit de config : 0=gain double, 1=pas de gain (ici choix "pas de gain", donc 1)
+  ecritureBitSPIvitesseMaximale(1);     // 4ème bit de config : 0=sortie DAC éteinte, 1=sortie DAC active (ici choix "sortie active", donc 1)
 
-  // Ecriture des 12 bits de données
+  // Ecriture des 12 bits de données, préalablement lues par l'ADC
   ecritureBitSPIvitesseMaximale(valeur & (1 << 11));    // Bit 11
   ecritureBitSPIvitesseMaximale(valeur & (1 << 10));    // Bit 10
   ecritureBitSPIvitesseMaximale(valeur & (1 << 9));     // Bit 9
@@ -238,19 +243,18 @@ void ecritDansDAC(uint16_t valeur) {
 }
 
 
-
 // ===========================================================
 // Fonction d'interruption du Timer 1 arduino, en cas de débordement
 // ===========================================================
 ISR(TIMER1_OVF_vect) {
 
-  // Lit la valeur échantillonnée dans l'ADC
+  // Lit la valeur échantillonnée par l'ADC
   uint16_t valeurLue = litADC();
 
-  // Ecrit cette valeur dans le DAC
+  // Écrit cette valeur dans le DAC
   ecritDansDAC(valeurLue);
 
-  // Et remise du compteur Timer1 à la "bonne valeur", afin d'appeller cette fonction à un rythme de 44100 Hz (valeur par défaut, inscrite tout en haut)
+  // Et remet le compteur du Timer1 à la "bonne valeur", afin d'appeller cette fonction à un rythme de 44100 Hz (valeur par défaut, inscrite tout en haut)
   TCNT1 = VALEUR_DEMARRAGE_TIMER1;
   
 }
