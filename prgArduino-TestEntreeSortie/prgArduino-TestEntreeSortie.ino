@@ -111,7 +111,7 @@ void setup() {
 // Fonction LOOP (boucle programme, après setup)
 // ===========================================================
 void loop() {
-  // Aucun code ici … car mis à part la fonction SETUP, "tout" se passe dans la fonction d'interruption tout en bas, nommée "ISR(TIMER1_OVF_vect)"
+  // Aucun code ici … car "tout" se passe dans la fonction SETUP au démarrage, puis dans la fonction d'interruption "ISR(TIMER1_OVF_vect)" après
 }
 
 
@@ -254,7 +254,7 @@ ISR(TIMER1_OVF_vect) {
   // Écrit cette valeur dans le DAC
   ecritDansDAC(valeurLue);
 
-  // Et remet le compteur du Timer1 à la "bonne valeur", afin d'appeller cette fonction à un rythme de 44100 Hz (valeur par défaut, inscrite tout en haut)
+  // Et remet le compteur du Timer1 à la "bonne valeur" de démarrage, afin d'appeler cette fonction à un rythme de 44100 Hz (valeur par défaut, inscrite tout en haut)
   TCNT1 = VALEUR_DEMARRAGE_TIMER1;
   
 }
