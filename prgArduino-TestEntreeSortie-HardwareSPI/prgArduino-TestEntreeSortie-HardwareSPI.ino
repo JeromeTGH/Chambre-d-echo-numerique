@@ -17,7 +17,7 @@
                   --> Méthode : hardware SPI
 
   Auteur :        Jérôme TOMSKI (https://passionelectronique.fr/)
-  Créé le :       07.04.2023
+  Créé le :       09.04.2023
 
 */
 
@@ -154,8 +154,10 @@ void loop() {
 // ===========================================================
 byte lectureEcritureSPI(byte donneesAenvoyer = 0b11111111) {
 
+  // Démarrage de l'envoi/réception simultané de données
   SPDR = donneesAenvoyer;               // On stocke les données à envoyer (8 bits, ici) dans le registre SPDR ("SPI Data Register") ; elles seront émises via la ligne MOSI
                                         // Par défaut, cette valeur sera à 0b11111111, si aucune donnée n'est à envoyer (commande "nulle")
+                                        // Nota : le fait de modifier la valeur de ce registre lance automatiquement la transmission SPI
 
   while(bitRead(SPSR, SPIF) != 1);      // On attend que le bit SPIF ("SPI Interrupt Flag") soit égal à 1 dans le registre SPSR ("SPI Status Register") ; cela arrive une fois le tranfert achevé
 
@@ -212,6 +214,12 @@ uint16_t litADC() {
 // ===========================================================
 void ecritDansDAC(uint16_t donneesPourDAC) {
   
+  // On fixe la vitesse de communication SPI à Fosc/2, soit 8 MHz, dans le cas d'un Arduino Nano cadencé par un quartz à 16 MHz
+  // (pour ce faire, on met les bits SPI2X à 1, SPR1 à 0, et SPR0 à 0 ; cf. tableau détaillant tout ça, tout en haut)
+  bitSet(SPCR, SPI2X);
+  bitClear(SPCR, SPR1);
+  bitClear(SPCR, SPR0);
+
   // Sélection du DAC (en abaissant sa ligne "slave select")
   selectionner_DAC;
 
