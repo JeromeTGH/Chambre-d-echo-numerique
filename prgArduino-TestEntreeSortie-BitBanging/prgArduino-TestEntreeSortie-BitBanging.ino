@@ -7,13 +7,14 @@
   \__|   \__,_|___||___|_|\___/|_| [_|    \____/|_|\___|\____\__\_|  \___/|_| |_|_|\__  |\__,_|\___|
                                                                                       | |
                                                                                       \_|
-  Fichier :       prgArduino-TestEntreeSortie.ino
+  Fichier :       prgArduino-TestEntreeSortie-BitBanging.ino
 
   Description :   Programme permettant de renvoyer directement les données lues en entrée (via l'ADC)
                   sur la sortie (via le DAC)
 
   Remarques :     --> la mémoire SRAM ne sera pas utilisée ici
                   --> l'Arduino utilisé pour ce projet est un "Nano" (donc un modèle équipé du microcontrôleur ATmega328P)
+                  --> Méthode : bit banging
 
   Auteur :        Jérôme TOMSKI (https://passionelectronique.fr/)
   Créé le :       07.04.2023
