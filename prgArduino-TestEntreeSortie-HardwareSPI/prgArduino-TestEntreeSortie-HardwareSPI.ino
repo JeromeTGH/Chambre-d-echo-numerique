@@ -53,7 +53,7 @@
 #define mettre_MOSI_a_etat_haut PORTB |= 0b00001000
 
 // Ligne MISO (branchée sur sortie D12 de la carte Arduino, soit la pin PB4 du µC, donc le bit 4 sur PORTB[7..0])
-#define lire_valeur_MISO        PORTB & 0b00010000
+#define lire_valeur_MISO        PINB & 0b00010000
 
 // Ligne SCK (branchée sur sortie D13 de la carte Arduino, soit la pin PB5 du µC, donc le bit 5 sur PORTB[7..0])
 #define mettre_SCK_a_etat_bas   PORTB &= 0b11011111
@@ -87,20 +87,25 @@ void setup() {
   pinMode(pin_MISO, INPUT);                                             // On ne fait rien de particulier sur la ligne MISO, qui est une entrée
   pinMode(pin_SCK, OUTPUT);       digitalWrite(pin_SCK, LOW);           // Mise à l'état bas de la ligne SCK (horloge SPI)
 
+  pinMode(10, OUTPUT);    // Même si on ne sert pas de la broche SS "normale" SPI de l'Arduino, il faut quand même la définir en "sortie"
+                          // (sans quoi, le SPI ne pourra pas passer en mode "maître")
+
+
   // Configuration du registre SPSR ("SPI Status Register") de l'ATmega328P -> page 141/294 du datasheet
   bitSet(SPSR, SPI2X);      // Permet de "doubler" la vitesse d'horloge SCK, de notre Arduino qui sera configuré "maître SPI"
                             // Nota : ce bit, "SPI2X", sera utilisé en combinaison avec les bits SPR1 et SPR0 (cf. ci-dessous)
 
   // Configuration du registre SPCR ("SPI Control Register") de l'ATmega328P -> page 140/294 du datasheet
-  bitClear(SPCR, SPIE);     // Désactive des interruptions SPI
-  bitSet(SPCR, SPE);        // Autorise les opérations sur le bus SPI
+  bitClear(SPCR, SPIE);     // Désactive les interruptions SPI
   bitClear(SPCR, DORD);     // Définit l'ordre des données (ici, à 0, c'est le MSB qui sera passé en premier, jusqu'à finir par le LSB)
   bitSet(SPCR, MSTR);       // Définit l'Arduino en "maître SPI" (d'où ce bit à 1)
   bitClear(SPCR, CPOL);     // Définit la polarité d'horloge SCK (ici, avec la valeur 0, on dit que SCK est actif à l'état haut / inactif à l'état bas)
   bitClear(SPCR, CPHA);     // Définit la phase d'horloge SCK (ici, avec la valeur 0, on dit que les données SPI sont échantillonnées sur chaque début de front d'horloge SCK)
+  bitSet(SPCR, SPE);        // Autorise les opérations sur le bus SPI
+
   bitClear(SPCR, SPR1);     // Si SPR1=0 et SPR0=0, et que SPI2X=1, alors la fréquence d'horloge sur SCK sera égale à Fosc/2 (soit 16 MHz/2, soit 8 MHz … soit le max atteignable avec ce µC)
   bitClear(SPCR, SPR0);
-
+  
           /* Relation entre vitesse d'horloge et bits SPI2X, SPR1, et SPR0
              Nota : dans le cas de notre Arduino Nano, cadencé par un quartz à 16 Mhz, alors Fosc = 16 000 000
  
@@ -116,7 +121,6 @@ void setup() {
               |   1   |   1   |   0   | Fosc / 32        (500 KHz) |
               |   1   |   1   |   1   | Fosc / 64        (250 KHz) |
               ------------------------------------------------------
- 
           */
 
   // Configuration des registres du "Timer 1", de l'ATmega328P -> page 112 (pour TIMSK1), page 108 (pour TCCR1A), page 110 (pour TCCR1B) du datasheet
@@ -161,10 +165,8 @@ byte lectureEcritureSPI(byte donneesAenvoyer = 0b11111111) {
 
   while(bitRead(SPSR, SPIF) != 1);      // On attend que le bit SPIF ("SPI Interrupt Flag") soit égal à 1 dans le registre SPSR ("SPI Status Register") ; cela arrive une fois le tranfert achevé
 
-  byte donneesRecues = SPDR;            // On récupère les données lues (8 bits), présentées sur la ligne MISO ; le bit SPIF est automatiquement remis à 0, ainsi
-
+  return SPDR;      // On récupère les données lues (8 bits), présentées sur la ligne MISO ; le bit SPIF est automatiquement remis à 0, ainsi.
 }
-
 
 
 // ===========================================================
@@ -174,6 +176,8 @@ uint16_t litADC() {
 
   // Variable qui nous permettra de stocker la valeur lue par l'ADC
   uint16_t valeurADC = 0;
+  uint8_t valHaut;
+  uint8_t valBas;
 
   // On fixe la vitesse de communication SPI à Fosc/16, soit 1 MHz, dans le cas d'un Arduino Nano cadencé par un quartz à 16 MHz
   // (pour ce faire, on met les bits SPI2X à 0, SPR1 à 0, et SPR0 à 1 ; cf. tableau détaillant tout ça, tout en haut)
@@ -187,11 +191,10 @@ uint16_t litADC() {
   // Remarque : le modèle d'ADC utilisé ici est un MCP3201 ; une fois la ligne slave-select abaissée, il nous faudra 15 coups d'horloge SCK pour récupérer les données
   //            (les 2 premiers coups d'horloge initialisent la communication, le 3ème coup génère un bit nul, et du 4ème au 15ème, on récupère nos 12 bits de données)
   
-  
   // Nous allons lire 2 octets sur le bus SPI (donc 16 bits), pour capturer ces 15 bits
-  valeurADC = lectureEcritureSPI();       // Lecture/enregistrement des 8 premiers bits
-  valeurADC = valeurADC << 8;             // On les décale de "8 crans" vers la gauche (ce qui rajoute des zéros "à droite", au passage)
-  valeurADC |= lectureEcritureSPI();      // Lecture/enregistrement des 8 bits suivants
+  valHaut = lectureEcritureSPI();         // Lecture/enregistrement des 8 premiers bits
+  valBas = lectureEcritureSPI();          // Lecture/enregistrement des 8 bits suivants
+  valeurADC = (valHaut << 8) | valBas;    // Concaténation de ces 2x8 bits, soit 16 bits lus
 
   // On décale la valeur enregistrée d'un cran vers la droite (pour ne conserver que les 15 bits qui nous intéressent, sur les 16 reçus)
   valeurADC = valeurADC >> 1;
@@ -228,8 +231,8 @@ void ecritDansDAC(uint16_t donneesPourDAC) {
       // 2ème bit de config : 0=unbuffered, 1=buffered (ici choix unbuffured, donc 0)
       // 3ème bit de config : 0=gain double, 1=pas de gain (ici choix "pas de gain", donc 1)
       // 4ème bit de config : 0=sortie DAC éteinte, 1=sortie DAC active (ici choix "sortie du DAC active", donc 1)
-      // ... d'où le masque "0011" qui sera rajouté "devant" les 12 bits de poids faible (conservés avec les "111111111111" qui suivent)
-  donneesPourDAC |= 0b0011111111111111;
+      // ... d'où le masque "0011" qui sera rajouté "devant" les 12 bits de poids faible (conservés avec les "000000000000" qui suivent)
+  donneesPourDAC |= 0b0011000000000000;
 
   // Ecriture de ces 16 bits (pour rappel : 4 bits de configuration, suivis de 12 bits de données)
   lectureEcritureSPI((uint8_t)(donneesPourDAC >> 8));                   // On récupère les 8 bits de poids fort (en les décalant à droite)
@@ -244,7 +247,7 @@ void ecritDansDAC(uint16_t donneesPourDAC) {
 // Fonction d'interruption du Timer 1 arduino, en cas de débordement
 // ===========================================================
 ISR(TIMER1_OVF_vect) {
-
+   
   // Lit la valeur échantillonnée par l'ADC
   uint16_t valeurLue = litADC();
 
