@@ -97,7 +97,6 @@ void setup() {
 uint8_t lectureOctetSurBusSPI() {
 
     SPDR = 0b11111111;          // Le fait d'envoyer une valeur démarre l'échange SPI (émission d'une cmde nulle, et réception des données simultanément)
-    asm volatile("nop");
     while(!(SPSR & (1<<SPIF))); // Attente de la fin de transmission
     return SPDR;
 }
