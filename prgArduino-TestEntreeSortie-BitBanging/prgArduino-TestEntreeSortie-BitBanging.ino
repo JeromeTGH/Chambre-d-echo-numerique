@@ -53,7 +53,7 @@
 #define mettre_MOSI_a_etat_haut PORTB |= 0b00001000
 
 // Ligne MISO (branchée sur sortie D12 de la carte Arduino, soit la pin PB4 du µC, donc le bit 4 sur PORTB[7..0])
-#define lire_valeur_MISO        PORTB & 0b00010000
+#define lire_valeur_MISO        PINB & 0b00010000
 
 // Ligne SCK (branchée sur sortie D13 de la carte Arduino, soit la pin PB5 du µC, donc le bit 5 sur PORTB[7..0])
 #define mettre_SCK_a_etat_bas   PORTB &= 0b11011111
@@ -129,7 +129,7 @@ void lectureBitSPIvitesseMaxADC(uint16_t &valeurCible, uint8_t positionDuBit) {
   executer_NOP;
   executer_NOP;
   executer_NOP;
-  if(lire_valeur_MISO != 0)
+  if (lire_valeur_MISO)
     valeurCible |= (1 << positionDuBit);
   mettre_SCK_a_etat_bas;
 
@@ -199,10 +199,11 @@ uint16_t litADC() {
 // ===========================================================
 // Fonction permettant d'écrire 1 bit sur le bus SPI, à la vitesse maximale du µC
 // ===========================================================
-void ecritureBitSPIvitesseMaximale(uint8_t valeur) {
+void ecritureBitSPIvitesseMaximale(uint16_t valeur) {
 
   valeur == 0 ? mettre_MOSI_a_etat_bas : mettre_MOSI_a_etat_haut;
   mettre_SCK_a_etat_haut;
+  executer_NOP;
   mettre_SCK_a_etat_bas;
 
   // Nota : à 16 MHz, chaque cycle du µC dure 62,5 ns
@@ -215,7 +216,7 @@ void ecritureBitSPIvitesseMaximale(uint8_t valeur) {
 // Fonction d'écriture à destination du DAC
 // ===========================================================
 void ecritDansDAC(uint16_t valeur) {
-  
+
   // Sélection du DAC (en abaissant sa ligne "slave select")
   selectionner_DAC;
 
