@@ -87,10 +87,6 @@ void setup() {
   pinMode(pin_MISO, INPUT);                                             // On ne fait rien de particulier sur la ligne MISO, qui est une entrée
   pinMode(pin_SCK, OUTPUT);       digitalWrite(pin_SCK, LOW);           // Mise à l'état bas de la ligne SCK (horloge SPI)
 
-  pinMode(10, OUTPUT);    // Même si on ne sert pas de la broche SS "normale" SPI de l'Arduino, il faut quand même la définir en "sortie"
-                          // (sans quoi, le SPI ne pourra pas passer en mode "maître")
-
-
   // Configuration du registre SPSR ("SPI Status Register") de l'ATmega328P -> page 141/294 du datasheet
   bitSet(SPSR, SPI2X);      // Permet de "doubler" la vitesse d'horloge SCK, de notre Arduino qui sera configuré "maître SPI"
                             // Nota : ce bit, "SPI2X", sera utilisé en combinaison avec les bits SPR1 et SPR0 (cf. ci-dessous)
