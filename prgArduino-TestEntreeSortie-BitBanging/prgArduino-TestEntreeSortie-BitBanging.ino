@@ -28,25 +28,25 @@
 #define pin_MISO      12    // Le signal MISO entre sur la pin D12 de la carte Arduino (cette pin est reliée en interne à la broche PB4 du µC ATmega328P)
 #define pin_SCK       13    // Le signal SCK sort sur la pin D13 de la carte Arduino (cette pin est reliée en interne à la broche PB5 du µC ATmega328P)
 
-#define pin_SS_ADC    2     // Le Slave-Select de l'ADC sort sur la pin D2 de la carte Arduino (cette pin est reliée en interne à la broche PD2 du µC ATmega328P)
-#define pin_SS_DAC    3     // Le Slave-Select du DAC sort sur la pin D3 de la carte Arduino (cette pin est reliée en interne à la broche PD3 du µC ATmega328P)
-#define pin_SS_SRAM   4     // Le Slave-Select de la SRAM sort sur la pin D4 de la carte Arduino (cette pin est reliée en interne à la broche PD4 du µC ATmega328P)
+#define pin_SS_ADC    10    // Le Slave-Select de l'ADC sort sur la pin D10 de la carte Arduino (cette pin est reliée en interne à la broche PB2 du µC ATmega328P)
+#define pin_SS_DAC    9     // Le Slave-Select du DAC sort sur la pin D9 de la carte Arduino (cette pin est reliée en interne à la broche PB1 du µC ATmega328P)
+#define pin_SS_SRAM   8     // Le Slave-Select de la SRAM sort sur la pin D8 de la carte Arduino (cette pin est reliée en interne à la broche PB0 du µC ATmega328P)
 
 // ===========================================================
 // Fonctions raccourcies
 // ===========================================================
 
-// Ligne slave-select de l'ADC (branchée sur sortie D2 de la carte Arduino, soit la pin PD2 du µC, donc le bit 2 sur PORTD[7..0])
-#define selectionner_ADC        PORTD &= 0b11111011
-#define desactiver_ADC          PORTD |= 0b00000100
+// Ligne slave-select de l'ADC (branchée sur sortie D10 de la carte Arduino, soit la pin PB2 du µC, donc le bit 2 sur PORTB[7..0])
+#define selectionner_ADC        PORTB &= 0b11111011
+#define desactiver_ADC          PORTB |= 0b00000100
 
-// Ligne slave-select du DAC (branchée sur sortie D3 de la carte Arduino, soit la pin PD3 du µC, donc le bit 3 sur PORTD[7..0])
-#define selectionner_DAC        PORTD &= 0b11110111
-#define desactiver_DAC          PORTD |= 0b00001000
+// Ligne slave-select du DAC (branchée sur sortie D9 de la carte Arduino, soit la pin PB1 du µC, donc le bit 1 sur PORTB[7..0])
+#define selectionner_DAC        PORTB &= 0b11111101
+#define desactiver_DAC          PORTB |= 0b00000010
 
-// Ligne slave-select de la SRAM (branchée sur sortie D4 de la carte Arduino, soit la pin PD4 du µC, donc le bit 4 sur PORTD[7..0])
-#define selectionner_SRAM       PORTD &= 0b11101111
-#define desactiver_SRAM         PORTD |= 0b00010000
+// Ligne slave-select de la SRAM (branchée sur sortie D8 de la carte Arduino, soit la pin PB0 du µC, donc le bit 0 sur PORTB[7..0])
+#define selectionner_SRAM       PORTB &= 0b11111110
+#define desactiver_SRAM         PORTB |= 0b00000001
 
 // Ligne MOSI (branchée sur sortie D11 de la carte Arduino, soit la pin PB3 du µC, donc le bit 3 sur PORTB[7..0])
 #define mettre_MOSI_a_etat_bas  PORTB &= 0b11110111
