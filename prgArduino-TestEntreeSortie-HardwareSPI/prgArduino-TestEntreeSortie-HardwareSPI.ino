@@ -32,9 +32,12 @@
 #define pin_SS_DAC    9     // Le Slave-Select du DAC sort sur la pin D9 de la carte Arduino (cette pin est reliée en interne à la broche PB1 du µC ATmega328P)
 #define pin_SS_SRAM   8     // Le Slave-Select de la SRAM sort sur la pin D8 de la carte Arduino (cette pin est reliée en interne à la broche PB0 du µC ATmega328P)
 
+#define pin_LED_CYCLE 7     // La LED faisant apparaître les "cycles de traitement signal" est reliée à la pin D7 de l'Arduino (soit la broche PD7 de l'ATmega328P)
+
 // ===========================================================
 // Fonctions raccourcies
 // ===========================================================
+// Rappel : PORTx permet de définir l'état de sortie du registre x, tandis que PINx permet de le lire
 
 // Ligne slave-select de l'ADC (branchée sur sortie D10 de la carte Arduino, soit la pin PB2 du µC, donc le bit 2 sur PORTB[7..0])
 #define selectionner_ADC        PORTB &= 0b11111011
@@ -59,13 +62,17 @@
 #define mettre_SCK_a_etat_bas   PORTB &= 0b11011111
 #define mettre_SCK_a_etat_haut  PORTB |= 0b00100000
 
+// Ligne LED (branchée sur sortie D7 de la carte Arduino, soit la pin PD7 du µC, donc le bit 7 sur PORTD[7..0])
+#define eteindre_la_LED_montrant_les_cycles   PORTD &= 0b01111111
+#define allumer_la_LED_montrant_les_cycles    PORTD |= 0b10000000
+
 // Fonction "NOP" (pour faire faire une pause au µC, équivalente à 1 cycle d'horloge, soit 62,5 ns, si prescaler non touché)
 #define executer_NOP asm volatile ("nop\n\t")
 
 // ===========================================================
 // CONSTANTES du programme
 // ===========================================================
-#define VITESSE_ECHANTILLONNAGE   44100   // De base, on échantillonnera le son reçu à 44100 Hz ("qualité CD", en fait)
+#define VITESSE_ECHANTILLONNAGE   44000   // De base, on échantillonnera le son reçu à 44100 Hz ("qualité CD", en fait)
 #define VALEUR_MAXI_TIMER1        65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
 
 // Calcul de la valeur initiale qu'on donnera au Timer 1, chaque fois qu'il aura dépassé son max (c'est à dire qu'il aura "débordé")
@@ -86,6 +93,10 @@ void setup() {
   pinMode(pin_MOSI, OUTPUT);      digitalWrite(pin_MOSI, LOW);          // Mise à l'état bas de la ligne MOSI (ligne de données maitre vers esclave)
   pinMode(pin_MISO, INPUT);                                             // On ne fait rien de particulier sur la ligne MISO, qui est une entrée
   pinMode(pin_SCK, OUTPUT);       digitalWrite(pin_SCK, LOW);           // Mise à l'état bas de la ligne SCK (horloge SPI)
+
+  // Définition de la broche, où est branchée la LED montrant les cycles de traitement signal, en "sortie" (et mise à 0, pour que la LED soit éteinte au démarrage)
+  pinMode(pin_LED_CYCLE, OUTPUT);
+  digitalWrite(pin_LED_CYCLE, LOW);
 
   // Configuration du registre SPSR ("SPI Status Register") de l'ATmega328P -> page 141/294 du datasheet
   bitSet(SPSR, SPI2X);      // Permet de "doubler" la vitesse d'horloge SCK, de notre Arduino qui sera configuré "maître SPI"
@@ -137,6 +148,8 @@ void setup() {
   TCNT1 = VALEUR_DEMARRAGE_TIMER1;    // Définit la valeur de démarrage du Timer 1
   interrupts();                       // Et, on ré-active les interruptions
 
+  // Délai de stabilisation, avant de lancer le programme
+  delay(100);
 }
 
 
@@ -243,14 +256,21 @@ void ecritDansDAC(uint16_t donneesPourDAC) {
 // Fonction d'interruption du Timer 1 arduino, en cas de débordement
 // ===========================================================
 ISR(TIMER1_OVF_vect) {
+
+  // On allume la LED "montrant les cycles" (LED jaune figurant sur la carte PCB)
+  allumer_la_LED_montrant_les_cycles;
    
-  // Lit la valeur échantillonnée par l'ADC
+  // On lit la valeur échantillonnée par l'ADC
   uint16_t valeurLue = litADC();
 
-  // Écrit cette valeur dans le DAC
+  // On écrit cette valeur dans le DAC
   ecritDansDAC(valeurLue);
 
-  // Et remet le compteur du Timer1 à la "bonne valeur" de démarrage, afin d'appeler cette fonction à un rythme de 44100 Hz (valeur par défaut, inscrite tout en haut)
+  // On remet le compteur du Timer1 à la "bonne valeur" de démarrage, afin d'appeler cette fonction à un rythme de 44100 Hz (valeur par défaut, inscrite tout en haut)
   TCNT1 = VALEUR_DEMARRAGE_TIMER1;
+
+  // Et on éteint la LED, pour signifier la fin d'un cycle (nota : l'allumage/extinction ne sera pas visible à l'oeil nu, compte tenu de la vitesse ;
+  // par contre, cette sortie sert à des mesures sur oscillo, pour comparer la vitesse des cycles, par rapport à la vitesse d'échantillonage souhaitée)
+  eteindre_la_LED_montrant_les_cycles;
   
 }
