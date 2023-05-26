@@ -72,11 +72,13 @@
 // ===========================================================
 // CONSTANTES du programme
 // ===========================================================
-#define VITESSE_ECHANTILLONNAGE   44000   // De base, on échantillonnera le son reçu à 44100 Hz ("qualité CD", en fait)
+#define VITESSE_ECHANTILLONNAGE   40000   // 40000 max, compte tenu des "limites" de l'arduino (pour info, la "qualité CD" est à 44100 Hz)
 #define VALEUR_MAXI_TIMER1        65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
+#define VALEUR_DE_COMPENSATION    56      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
 
 // Calcul de la valeur initiale qu'on donnera au Timer 1, chaque fois qu'il aura dépassé son max (c'est à dire qu'il aura "débordé")
-#define VALEUR_DEMARRAGE_TIMER1   VALEUR_MAXI_TIMER1 - (F_CPU / VITESSE_ECHANTILLONNAGE)  // En sachant que F_CPU est déjà une valeur définie (valant 16000000L, correspondant à la valeur du quartz 16 MHz, équipant l'Arduino Nano)
+volatile unsigned int valeur_initiale_du_timer1 = VALEUR_MAXI_TIMER1 - (F_CPU / VITESSE_ECHANTILLONNAGE) + VALEUR_DE_COMPENSATION;
+// En sachant que F_CPU est déjà une valeur connue ; de base, elle vaut 16.000.000 pour un Arduino Nano (si bien cadencé par son quartz externe à 16 MHz)
 
 
 // ===========================================================
@@ -145,7 +147,7 @@ void setup() {
   bitSet(TIMSK1, TOIE1);    // On active le déclenchement d'interruption en cas de débordement du Timer1 (si le compteur essaye de dépasser 65535, donc)
                             // Nota : cela enclenchera l'appel de la fonction "ISR(TIMER1_OVF_vect)", écrite plus bas
  
-  TCNT1 = VALEUR_DEMARRAGE_TIMER1;    // Définit la valeur de démarrage du Timer 1
+  TCNT1 = valeur_initiale_du_timer1;  // Définit la valeur de démarrage du Timer 1
   interrupts();                       // Et, on ré-active les interruptions
 
   // Délai de stabilisation, avant de lancer le programme
@@ -257,6 +259,9 @@ void ecritDansDAC(uint16_t donneesPourDAC) {
 // ===========================================================
 ISR(TIMER1_OVF_vect) {
 
+  // On remet le compteur du Timer1 à la "bonne valeur" de démarrage, car il continu de compter, pendant cette interruption
+  TCNT1 = valeur_initiale_du_timer1;
+
   // On allume la LED "montrant les cycles" (LED jaune figurant sur la carte PCB)
   allumer_la_LED_montrant_les_cycles;
    
@@ -265,9 +270,6 @@ ISR(TIMER1_OVF_vect) {
 
   // On écrit cette valeur dans le DAC
   ecritDansDAC(valeurLue);
-
-  // On remet le compteur du Timer1 à la "bonne valeur" de démarrage, afin d'appeler cette fonction à un rythme de 44100 Hz (valeur par défaut, inscrite tout en haut)
-  TCNT1 = VALEUR_DEMARRAGE_TIMER1;
 
   // Et on éteint la LED, pour signifier la fin d'un cycle (nota : l'allumage/extinction ne sera pas visible à l'oeil nu, compte tenu de la vitesse ;
   // par contre, cette sortie sert à des mesures sur oscillo, pour comparer la vitesse des cycles, par rapport à la vitesse d'échantillonage souhaitée)
