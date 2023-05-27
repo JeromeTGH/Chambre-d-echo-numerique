@@ -71,14 +71,25 @@
 // ===========================================================
 // CONSTANTES du programme
 // ===========================================================
-#define VITESSE_ECHANTILLONNAGE   40000   // 40000 max, compte tenu des "limites" de l'arduino (pour info, la "qualité CD" est à 44100 Hz)
+#define FREQUENCE_D_ECHANTILLONNAGE   40000   // 40000 max, compte tenu des "limites" de l'arduino (pour info, la "qualité CD" est à 44100 Hz)
+#define FREQUENCE_DU_SIGNAL_DE_SORTIE 440     // 440 hertz, par exemple (pour obtenir le "LA", du diapason)
+
 #define VALEUR_MAXI_TIMER1        65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
 #define VALEUR_DE_COMPENSATION    56      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
 
+// *********************************************************************************************************************************
 // Calcul de la valeur initiale qu'on donnera au Timer 1, chaque fois qu'il aura dépassé son max (c'est à dire qu'il aura "débordé")
-volatile unsigned int valeur_initiale_du_timer1 = VALEUR_MAXI_TIMER1 - (F_CPU / VITESSE_ECHANTILLONNAGE) + VALEUR_DE_COMPENSATION;
-// En sachant que F_CPU est déjà une valeur connue ; de base, elle vaut 16.000.000 pour un Arduino Nano (si bien cadencé par son quartz externe à 16 MHz)
+// *********************************************************************************************************************************
+volatile unsigned int valeur_initiale_du_timer1 = VALEUR_MAXI_TIMER1 - (F_CPU / FREQUENCE_D_ECHANTILLONNAGE) + VALEUR_DE_COMPENSATION;
+      // En sachant que F_CPU est déjà une valeur connue ; de base, elle vaut 16.000.000
+      // pour un Arduino Nano (si bien cadencé par son quartz externe à 16 MHz)
 
+// *****************************************************************************************************************************************
+// Tableau qui contiendra la représentation de l'onde sinusoïdale qu'on cherche à reproduire en sortie (pour obtenir un "beau" LA, à 440 Hz)
+// *****************************************************************************************************************************************
+const unsigned int nombre_de_divisions_onde_sinus = FREQUENCE_D_ECHANTILLONNAGE/FREQUENCE_DU_SIGNAL_DE_SORTIE;
+volatile unsigned int tableau_de_valeurs_sinus[nombre_de_divisions_onde_sinus];
+volatile unsigned int position_dans_tableau = 0;
 
 // ===========================================================
 // Fonction SETUP (démarrage programme)
@@ -131,6 +142,9 @@ void setup() {
               ------------------------------------------------------
           */
 
+  // Génération des valeurs représentant une onde sinusoïdale, pour la reproduire en sortie de DAC
+  generer_valeurs_onde_sinusoidale();
+
   // Configuration des registres du "Timer 1", de l'ATmega328P -> page 112 (pour TIMSK1), page 108 (pour TCCR1A), page 110 (pour TCCR1B) du datasheet
   noInterrupts();           // Avant tout, on désactive toutes les interruptions
 
@@ -162,6 +176,27 @@ void loop() {
 }
 
 
+
+// ===========================================================================================================================================
+// Rempli de valeurs le tableau "tableau_de_valeurs_sinus", pour former une "belle" onde sinusoïdale, en sortie de DAC (et de fréquence voulue)
+// ===========================================================================================================================================
+void generer_valeurs_onde_sinusoidale() {
+
+  // Nota : ici, je décompose au maximum toutes les étapes de calcul (qui auraient pu être largement simplifiées), afin que vous puissiez mieux comprendre
+
+  // Correspondance d'une division en degrés ("angle")
+  float valeur_en_degres_pour_chaque_division = 360 / nombre_de_divisions_onde_sinus;                       // Un "tour complet" faisant 360°
+
+  // Conversion de cette valeur en radians ("angle")
+  float valeur_en_radians_pour_chaque_division = valeur_en_degres_pour_chaque_division / 360 * 2 * PI;      // Un "tour complet faisant 2xPi radians (soit 360°)
+
+  // Remplissage du tableau "tableau_de_valeurs_sinus", avec des valeurs sur 12 bits (variant donc de 0 à 4095, avec une moyenne à 2048
+  for(int i=0 ; i < nombre_de_divisions_onde_sinus ; i++) {
+    tableau_de_valeurs_sinus[i] = 2048 + 2047 * sin(valeur_en_radians_pour_chaque_division);
+      // Ainsi, la moyenne est de 2048, le min de 2048-2047 (soit 1), et le max de 2048+2047 (soit 4095)
+  }
+  
+}
 
 // ==================================================================
 // Fonction lectureEcritureSPI (écrit et lit un octet sur le bus SPI)
@@ -222,10 +257,15 @@ ISR(TIMER1_OVF_vect) {
   allumer_la_LED_montrant_les_cycles;
    
   // On lit la valeur échantillonnée par l'ADC
-  uint16_t valeurLue = 32768;     // <--- à remplacer ensuite par notre tableau de valeurs
+  uint16_t valeurLue = tableau_de_valeurs_sinus[position_dans_tableau];
 
   // On écrit cette valeur dans le DAC
   ecritDansDAC(valeurLue);
+
+  // On détermine la prochaine position dans le tableau (représentant notre onde sinusoïdale à générer en sortie)
+  position_dans_tableau++;
+  if(position_dans_tableau > nombre_de_divisions_onde_sinus)
+    position_dans_tableau = 0;
 
   // Et on éteint la LED, pour signifier la fin d'un cycle (nota : l'allumage/extinction ne sera pas visible à l'oeil nu, compte tenu de la vitesse ;
   // par contre, cette sortie sert à des mesures sur oscillo, pour comparer la vitesse des cycles, par rapport à la vitesse d'échantillonage souhaitée)

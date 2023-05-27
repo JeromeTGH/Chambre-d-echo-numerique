@@ -65,12 +65,12 @@
 // ===========================================================
 // CONSTANTES du programme
 // ===========================================================
-#define VITESSE_ECHANTILLONNAGE   40000   // 40000 max, compte tenu des "limites" de l'arduino (pour info, la "qualité CD" est à 44100 Hz)
-#define VALEUR_MAXI_TIMER1        65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
-#define VALEUR_DE_COMPENSATION    56      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
+#define FREQUENCE_D_ECHANTILLONNAGE   40000   // 40000 max, compte tenu des "limites" de l'arduino (pour info, la "qualité CD" est à 44100 Hz)
+#define VALEUR_MAXI_TIMER1            65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
+#define VALEUR_DE_COMPENSATION        56      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
 
 // Calcul de la valeur initiale qu'on donnera au Timer 1, chaque fois qu'il aura dépassé son max (c'est à dire qu'il aura "débordé")
-volatile unsigned int valeur_initiale_du_timer1 = VALEUR_MAXI_TIMER1 - (F_CPU / VITESSE_ECHANTILLONNAGE) + VALEUR_DE_COMPENSATION;
+volatile unsigned int valeur_initiale_du_timer1 = VALEUR_MAXI_TIMER1 - (F_CPU / FREQUENCE_D_ECHANTILLONNAGE) + VALEUR_DE_COMPENSATION;
 // En sachant que F_CPU est déjà une valeur connue ; de base, elle vaut 16.000.000 pour un Arduino Nano (si bien cadencé par son quartz externe à 16 MHz)
 
 
