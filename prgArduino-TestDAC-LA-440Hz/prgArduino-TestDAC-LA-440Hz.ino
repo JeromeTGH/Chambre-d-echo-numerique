@@ -75,7 +75,7 @@
 #define FREQUENCE_DU_SIGNAL_DE_SORTIE 440     // 440 hertz, par exemple (pour obtenir le "LA", du diapason)
 
 #define VALEUR_MAXI_TIMER1        65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
-#define VALEUR_DE_COMPENSATION    56      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
+#define VALEUR_DE_COMPENSATION    38      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
 
 // *********************************************************************************************************************************
 // Calcul de la valeur initiale qu'on donnera au Timer 1, chaque fois qu'il aura dépassé son max (c'est à dire qu'il aura "débordé")
@@ -142,10 +142,18 @@ void setup() {
               ------------------------------------------------------
           */
 
+  // *********************************************************************************************
   // Génération des valeurs représentant une onde sinusoïdale, pour la reproduire en sortie de DAC
-  generer_valeurs_onde_sinusoidale();
+  // *********************************************************************************************
+  for(int i=0 ; i < nombre_de_divisions_onde_sinus ; i++) {
+    // Remplissage du tableau "tableau_de_valeurs_sinus", avec des valeurs sur 12 bits (variant donc de 0 à 4095, avec une moyenne à 2047.5)
+    // Nota : un "tour complet" de sinusoïde fait "2xPi radians"
+    tableau_de_valeurs_sinus[i] = 2047.5 + 2047.5 * cos(2*PI*i/nombre_de_divisions_onde_sinus);
+  }
 
+  // *********************************************************************************************
   // Configuration des registres du "Timer 1", de l'ATmega328P -> page 112 (pour TIMSK1), page 108 (pour TCCR1A), page 110 (pour TCCR1B) du datasheet
+  // *********************************************************************************************
   noInterrupts();           // Avant tout, on désactive toutes les interruptions
 
   bitClear(TCCR1B, WGM13);  // On active le "mode de génération de forme « normal »", c'est à dire un mode de comptage jusqu'à débordement du timer1
@@ -175,28 +183,6 @@ void loop() {
   // Aucun code ici … car "tout" se passe dans la fonction SETUP au démarrage, puis dans la fonction d'interruption "ISR(TIMER1_OVF_vect)" après
 }
 
-
-
-// ===========================================================================================================================================
-// Rempli de valeurs le tableau "tableau_de_valeurs_sinus", pour former une "belle" onde sinusoïdale, en sortie de DAC (et de fréquence voulue)
-// ===========================================================================================================================================
-void generer_valeurs_onde_sinusoidale() {
-
-  // Nota : ici, je décompose au maximum toutes les étapes de calcul (qui auraient pu être largement simplifiées), afin que vous puissiez mieux comprendre
-
-  // Correspondance d'une division en degrés ("angle")
-  float valeur_en_degres_pour_chaque_division = 360 / nombre_de_divisions_onde_sinus;                       // Un "tour complet" faisant 360°
-
-  // Conversion de cette valeur en radians ("angle")
-  float valeur_en_radians_pour_chaque_division = valeur_en_degres_pour_chaque_division / 360 * 2 * PI;      // Un "tour complet faisant 2xPi radians (soit 360°)
-
-  // Remplissage du tableau "tableau_de_valeurs_sinus", avec des valeurs sur 12 bits (variant donc de 0 à 4095, avec une moyenne à 2048
-  for(int i=0 ; i < nombre_de_divisions_onde_sinus ; i++) {
-    tableau_de_valeurs_sinus[i] = 2048 + 2047 * sin(valeur_en_radians_pour_chaque_division);
-      // Ainsi, la moyenne est de 2048, le min de 2048-2047 (soit 1), et le max de 2048+2047 (soit 4095)
-  }
-  
-}
 
 // ==================================================================
 // Fonction lectureEcritureSPI (écrit et lit un octet sur le bus SPI)
@@ -264,7 +250,7 @@ ISR(TIMER1_OVF_vect) {
 
   // On détermine la prochaine position dans le tableau (représentant notre onde sinusoïdale à générer en sortie)
   position_dans_tableau++;
-  if(position_dans_tableau > nombre_de_divisions_onde_sinus)
+  if(position_dans_tableau == nombre_de_divisions_onde_sinus)
     position_dans_tableau = 0;
 
   // Et on éteint la LED, pour signifier la fin d'un cycle (nota : l'allumage/extinction ne sera pas visible à l'oeil nu, compte tenu de la vitesse ;
