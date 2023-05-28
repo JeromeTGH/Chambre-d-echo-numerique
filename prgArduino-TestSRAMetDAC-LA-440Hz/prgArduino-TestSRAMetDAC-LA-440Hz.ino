@@ -73,11 +73,11 @@
 // ===========================================================
 // CONSTANTES du programme
 // ===========================================================
-#define FREQUENCE_D_ECHANTILLONNAGE   40000   // 40000 max, compte tenu des "limites" de l'arduino (pour info, la "qualité CD" est à 44100 Hz)
+#define FREQUENCE_D_ECHANTILLONNAGE   20000   // 40000 max, compte tenu des "limites" de l'arduino (pour info, la "qualité CD" est à 44100 Hz)
 #define FREQUENCE_DU_SIGNAL_DE_SORTIE 440     // 440 hertz, par exemple (pour obtenir le "LA", du diapason)
 
 #define VALEUR_MAXI_TIMER1        65535   // Valeur max que peut atteindre le "Timer 1", dont nous nous servirons ici (pour rappel, c'est un compteur 16 bits ; il compte donc de 0 à 65535)
-#define VALEUR_DE_COMPENSATION    38      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
+#define VALEUR_DE_COMPENSATION    55      // Valeur qui s'ajoute au compte Timer1, pour compenser le "temps perdu" au moment de l'appel d'interruption (et retour)
 
 // *********************************************************************************************************************************
 // Calcul de la valeur initiale qu'on donnera au Timer 1, chaque fois qu'il aura dépassé son max (c'est à dire qu'il aura "débordé")
@@ -90,8 +90,8 @@ volatile unsigned int valeur_initiale_du_timer1 = VALEUR_MAXI_TIMER1 - (F_CPU / 
 // Tableau qui contiendra la représentation de l'onde sinusoïdale qu'on cherche à reproduire en sortie (pour obtenir un "beau" LA, à 440 Hz)
 // *****************************************************************************************************************************************
 const unsigned int nombre_de_divisions_onde_sinus = FREQUENCE_D_ECHANTILLONNAGE/FREQUENCE_DU_SIGNAL_DE_SORTIE;
-//volatile unsigned int tableau_de_valeurs_sinus[nombre_de_divisions_onde_sinus];
-volatile unsigned int position_dans_tableau = 0;
+volatile unsigned int position_dans_SRAM = 0;
+
 
 // ===========================================================
 // Fonction SETUP (démarrage programme)
@@ -174,43 +174,6 @@ void setup() {
 }
 
 
-// ===============================================
-// Fonction génération sinus et stockage dans SRAM
-// ===============================================
-void generationSinusEtStockageDansSRAM() {
-
-  uint16_t valeur_a_enregistrer;            // Variable 16 bits, qui contiendra les portions codées sur 12 bits de notre sinusoïde
-  uint16_t adresse_dans_memoire_SRAM = 0;   // Pointeur vers cases mémoire de la SRAM (on commence à zéro, bien entendu)
-  
-  for(int i=0 ; i < nombre_de_divisions_onde_sinus ; i++) {
-    // Le DAC a besoin de valeurs sur 12 bits (variant donc de 0 à 4095, avec une moyenne à 2047.5), d'où ce choix ici
-    valeur_a_enregistrer = 2047.5 + 2047.5 * cos(2*PI*i/nombre_de_divisions_onde_sinus);
-                // Nota : un "tour complet" de sinusoïde fait "2xPi radians"
-
-    // Activation de la SRAM (en baissant sa ligne /CS à LOW)
-    selectionner_SRAM;
-    
-    // Envoi d'une instruction signifiant qu'on veut ECRIRE dans la SRAM (code 0000 0010)
-    lectureEcritureSPI(0b00000010);
-
-        // Nota : on va se servir de la variable i pour également définir l'adresse mémoire qu'on vise sur la SRAM
-        //        (et comme on écrit 2 octets à chaque boucle ici, on se servira plutôt de 2*i et 2*i+1)
-
-    // Envoi de 24 bits d'ADRESSE (nécessaire, pour la SRAM)
-    lectureEcritureSPI(0b00000000);                                    // Envoi de 8 bits à zéro (puisqu'on adresse que sur 16 bits, dans cet exemple)
-    lectureEcritureSPI((uint8_t)((i*2) >> 8));                         // Envoi des 8 bits d'ADRESSE de poids fort en premier
-    lectureEcritureSPI((uint8_t)((i*2) & 0b0000000011111111));         // Envoi des 8 bits d'ADRESSE de poids faible
-
-    // Envoi de 16 bits de DONNEES
-    lectureEcritureSPI((uint8_t)((i*2+1) >> 8));                       // Envoi des 8 bits de DONNEES de poids fort en premier
-    lectureEcritureSPI((uint8_t)((i*2+1) & 0b0000000011111111));       // Envoi des 8 bits de DONNEES de poids faible
-       
-    // Déselection de la SRAM (en remontant sa ligne /CS à HIGH)
-    desactiver_SRAM;
-  }
-}
-
-
 // =============================================
 // Fonction LOOP (boucle programme, après setup)
 // =============================================
@@ -266,6 +229,92 @@ void ecritDansDAC(uint16_t donneesPourDAC) {
 }
 
 
+// ===============================================
+// Fonction génération sinus et stockage dans SRAM
+// ===============================================
+void generationSinusEtStockageDansSRAM() {
+
+  uint16_t valeur_a_enregistrer;            // Variable 16 bits, qui contiendra les portions codées sur 12 bits de notre sinusoïde
+  
+  for(uint16_t i=0 ; i < nombre_de_divisions_onde_sinus ; i++) {
+    // Le DAC a besoin de valeurs sur 12 bits (variant donc de 0 à 4095, avec une moyenne à 2047.5), d'où ce choix ici
+    valeur_a_enregistrer = 2047.5 + 2047.5 * cos(2*PI*i/nombre_de_divisions_onde_sinus);
+                // Nota : un "tour complet" de sinusoïde fait "2xPi radians"
+    ecritureEnMemoireSRAM(i*2, valeur_a_enregistrer);
+  }
+}
+
+
+// ===================================
+// Fonction d'écriture en mémoire SRAM
+// ===================================
+void ecritureEnMemoireSRAM(uint16_t adresseVisee, uint16_t donnees) {
+
+  // On fixe la vitesse de communication SPI à Fosc/2, soit 8 MHz, dans le cas d'un Arduino Nano cadencé par un quartz à 16 MHz
+  // (pour ce faire, on met les bits SPI2X à 1, SPR1 à 0, et SPR0 à 0 ; cf. tableau détaillant tout ça, tout en haut)
+  bitSet(SPCR, SPI2X);
+  bitClear(SPCR, SPR1);
+  bitClear(SPCR, SPR0);
+
+  // Activation de la SRAM (en baissant sa ligne /CS à LOW)
+  selectionner_SRAM;
+  
+  // Envoi d'une instruction signifiant qu'on veut ÉCRIRE dans la SRAM (code 0000 0010)
+  lectureEcritureSPI(0b00000010);
+  
+  // Envoi de 24 bits d'ADRESSE (nécessaire, pour la SRAM)
+  lectureEcritureSPI(0b00000000);                                     // Envoi de 8 bits à zéro (puisqu'on adresse que sur 16 bits, dans cet exemple)
+  lectureEcritureSPI((uint8_t)(adresseVisee >> 8));                   // Envoi des 8 bits d'ADRESSE de poids fort en premier
+  lectureEcritureSPI((uint8_t)(adresseVisee & 0b0000000011111111));   // Envoi des 8 bits d'ADRESSE de poids faible
+  
+  // Écriture de 2 fois 8 bits de DONNEES
+  lectureEcritureSPI((uint8_t)(donnees >> 8));                        // Envoi des 8 bits de DONNEES de poids fort en premier
+  lectureEcritureSPI((uint8_t)(donnees & 0b0000000011111111));        // Envoi des 8 bits de DONNEES de poids faible
+     
+  // Déselection de la SRAM (en remontant sa ligne /CS à HIGH)
+  desactiver_SRAM;
+
+}
+
+
+// ======================================
+// Fonction de lecture de la mémoire SRAM
+// ======================================
+uint16_t lectureEnMemoireSRAM(uint16_t adresseVisee) {
+
+  // On fixe la vitesse de communication SPI à Fosc/2, soit 8 MHz, dans le cas d'un Arduino Nano cadencé par un quartz à 16 MHz
+  // (pour ce faire, on met les bits SPI2X à 1, SPR1 à 0, et SPR0 à 0 ; cf. tableau détaillant tout ça, tout en haut)
+  bitSet(SPCR, SPI2X);
+  bitClear(SPCR, SPR1);
+  bitClear(SPCR, SPR0);
+
+  // Variables de stockage temporaire
+  uint8_t donnees8bisDePoidsFort;
+  uint8_t donnees8bisDePoidsFaible;
+  
+  // Activation de la SRAM (en baissant sa ligne /CS à LOW)
+  selectionner_SRAM;
+  
+  // Envoi d'une instruction signifiant qu'on veut LIRE dans la SRAM (code 0000 0011)
+  lectureEcritureSPI(0b00000011);
+  
+  // Envoi de 24 bits d'ADRESSE (nécessaire, pour la SRAM)
+  lectureEcritureSPI(0b00000000);                                     // Envoi de 8 bits à zéro (puisqu'on adresse que sur 16 bits, dans cet exemple)
+  lectureEcritureSPI((uint8_t)(adresseVisee >> 8));                   // Envoi des 8 bits d'ADRESSE de poids fort en premier
+  lectureEcritureSPI((uint8_t)(adresseVisee & 0b0000000011111111));   // Envoi des 8 bits d'ADRESSE de poids faible
+  
+  // Lecture de 2 fois 8 bits de DONNEES
+  donnees8bisDePoidsFort = lectureEcritureSPI();                      // Envoi des 8 bits de DONNEES de poids fort en premier
+  donnees8bisDePoidsFaible = lectureEcritureSPI();                    // Envoi des 8 bits de DONNEES de poids faible
+     
+  // Déselection de la SRAM (en remontant sa ligne /CS à HIGH)
+  desactiver_SRAM;
+
+  // Et renvoit des données lues, au format 16 bits
+  return ((donnees8bisDePoidsFort << 8) || donnees8bisDePoidsFaible);
+}
+
+
 // =================================================================
 // Fonction d'interruption du Timer 1 arduino, en cas de débordement
 // =================================================================
@@ -278,15 +327,15 @@ ISR(TIMER1_OVF_vect) {
   allumer_la_LED_montrant_les_cycles;
    
   // On lit la valeur 2 x 8 bits, stockée dans la SRAM
-  uint16_t valeurLue = tableau_de_valeurs_sinus[position_dans_tableau];
+  uint16_t valeurLue = lectureEnMemoireSRAM(position_dans_SRAM);
 
   // On écrit cette valeur dans le DAC
   ecritDansDAC(valeurLue);
 
-  // On détermine la prochaine position dans le tableau (représentant notre onde sinusoïdale à générer en sortie)
-  position_dans_tableau++;
-  if(position_dans_tableau == nombre_de_divisions_onde_sinus)
-    position_dans_tableau = 0;
+  // On détermine la prochaine position dans la mémoire SRAM (représentant notre onde sinusoïdale à générer en sortie)
+  position_dans_SRAM = position_dans_SRAM + 2;                  // Nota : comme la mémoire ne peut stocker que des données 8 bits et que
+  if(position_dans_SRAM == (nombre_de_divisions_onde_sinus*2))  //        notre signal est "codé" sur 16 bits, alors on avance de 2 en 2
+    position_dans_SRAM = 0;
 
   // Et on éteint la LED, pour signifier la fin d'un cycle (nota : l'allumage/extinction ne sera pas visible à l'oeil nu, compte tenu de la vitesse ;
   // par contre, cette sortie sert à des mesures sur oscillo, pour comparer la vitesse des cycles, par rapport à la vitesse d'échantillonage souhaitée)
